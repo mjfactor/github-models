@@ -6,55 +6,78 @@ from langchain_huggingface import ChatHuggingFace, HuggingFaceEndpoint
 from PIL import Image
 import io
 
-# Read the API key from the config file
+# Config setup
 config = configparser.ConfigParser()
 config.read('config.ini')
 hf_api = config['API']['huggingface_api']
 
-generated_text = ""
-
-# Image-To-Text API setup
+# API setup
 API_URL = "https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-large"
 headers = {"Authorization": f"Bearer {hf_api}"}
 
 def query_image(image_file):
-    response = requests.post(
-        API_URL,
-        headers=headers,
-        data=image_file
-    )
+    response = requests.post(API_URL, headers=headers, data=image_file)
     return response.json()
 
+def generate_story(text):
+    llm = HuggingFaceEndpoint(
+        repo_id="HuggingFaceH4/zephyr-7b-beta",
+        task="text-generation",
+        max_new_tokens=512,
+        do_sample=False,
+        repetition_penalty=1.03,
+    )
+    from langchain_core.messages import (
+        HumanMessage,
+        SystemMessage,
+    )
+    
+    chat_model = ChatHuggingFace(llm=llm)
+    messages = [
+        SystemMessage(content="You are a story teller, if you recieved a message, you should respond to it with story based on that phrase or sentence. You're story have unespected plot. The words are no more longer than 100 words."),
+        HumanMessage(content=text),
+    ]
+    
+    return chat_model.invoke(messages).content
+
 # Streamlit UI
-st.title("Image Caption Generator")
-st.write("Upload an image and get an AI-generated description!")
+st.title("Image to Story Generator")
+st.write("Upload an image and get an AI-generated story based on it!")
 
-# Image upload
-uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
+# Sidebar for image upload
+with st.sidebar:
+    st.header("Upload Image")
+    uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
 
-if uploaded_file is not None:
+# Main content
+if uploaded_file:
     # Display uploaded image
     image = Image.open(uploaded_file)
     st.image(image, caption='Uploaded Image', use_container_width=True)
     
-    # Add process button
-    if st.button('Generate Caption'):
-        with st.spinner('Analyzing image...'):
-            # Convert image to bytes
-            img_byte_arr = io.BytesIO()
-            image.save(img_byte_arr, format=image.format)
-            img_byte_arr = img_byte_arr.getvalue()
-            
-            # Get prediction
+    # Process button
+    if st.button('Generate Story'):
+        with st.spinner('Processing generating story...'):
             try:
-                result = query_image(img_byte_arr)
-                st.success("Caption Generated!")
-                generated_text = result[0]['generated_text']
-                st.write(generated_text)
+                # Generate caption
+                img_byte_arr = io.BytesIO()
+                image.save(img_byte_arr, format=image.format)
+                img_byte_arr = img_byte_arr.getvalue()
+                
+                caption_result = query_image(img_byte_arr)
+                caption = caption_result[0]['generated_text']
+                
+                # Generate story
+                story = generate_story(caption)
+                
+                st.subheader("Generated Story")
+                st.write(story)
+                
             except Exception as e:
-                st.error(f"Error generating caption: {str(e)}")
+                st.error(f"Error during processing: {str(e)}")
+else:
+    st.info("Please upload an image to get started!")
 
-print(generated_text)
 
 #TTS
 
