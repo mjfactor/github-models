@@ -4,9 +4,10 @@ import streamlit as st
 import requests
 from langchain_huggingface import ChatHuggingFace, HuggingFaceEndpoint
 from PIL import Image
+from IPython.display import Audio
 import io
 
-# Config setup
+# Fetching Hugging Face API key from config.ini
 config = configparser.ConfigParser()
 config.read('config.ini')
 hf_api = config['API']['huggingface_api']
@@ -40,6 +41,14 @@ def generate_story(text):
     
     return chat_model.invoke(messages).content
 
+TTS_API_URL = "https://api-inference.huggingface.co/models/microsoft/speecht5_tts"
+headers = {"Authorization": f"Bearer {hf_api}"}
+
+def generate_speech(text):
+    response = requests.post(TTS_API_URL, headers=headers, json={"inputs": text})
+    return response.content
+
+
 # Streamlit UI
 st.title("Image to Story Generator")
 st.write("Upload an image and get an AI-generated story based on it!")
@@ -51,13 +60,13 @@ with st.sidebar:
 
 # Main content
 if uploaded_file:
-    # Display uploaded image
-    image = Image.open(uploaded_file)
-    st.image(image, caption='Uploaded Image', use_container_width=True)
+    col1, col2 = st.columns(2)
+    with col1:
+        image = Image.open(uploaded_file)
+        st.image(image, caption='Uploaded Image', use_container_width=True)
     
-    # Process button
-    if st.button('Generate Story'):
-        with st.spinner('Processing generating story...'):
+    if st.button('Generate Caption, Story and Audio'):
+        with st.spinner('Processing...'):
             try:
                 # Generate caption
                 img_byte_arr = io.BytesIO()
@@ -67,30 +76,23 @@ if uploaded_file:
                 caption_result = query_image(img_byte_arr)
                 caption = caption_result[0]['generated_text']
                 
+                with col2:
+                    st.subheader("Image Caption")
+                    st.write(caption)
+                
                 # Generate story
                 story = generate_story(caption)
                 
                 st.subheader("Generated Story")
                 st.write(story)
                 
+                # Generate audio
+                with st.spinner('Generating audio...'):
+                    audio_bytes = generate_speech(story)
+                    st.subheader("Listen to the Story")
+                    st.audio(audio_bytes, format='audio/mp3')
+                
             except Exception as e:
                 st.error(f"Error during processing: {str(e)}")
 else:
     st.info("Please upload an image to get started!")
-
-
-#TTS
-
-# API_URL = "https://api-inference.huggingface.co/models/microsoft/speecht5_tts"
-# headers = {"Authorization": f"Bearer {hf_api}"}
-
-# def query(payload):
-# 	response = requests.post(API_URL, headers=headers, json=payload)
-# 	return response.content
-
-# audio_bytes = query({
-# 	"inputs": "The answer to the universe is 42",
-# })
-# # You can access the audio with IPython.display for example
-# from IPython.display import Audio
-# Audio(audio_bytes)
